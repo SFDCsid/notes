@@ -6,7 +6,23 @@ account.Make sure your code works in bulk operations as well.
 //////////////////////////////////  salesforce exclusive Asynchronous apex  ////////////////////////////////////
 
 //////////////////////////////////// FUTURE APEX ////////////////////////////////////////////////////////////////
+/* 
+1.FUTURE METHOD IS A SET OF CODE THAT WE RUNS IN BACKGROUND.
+2.FUTURE METHOD ONLY ACCEPTS PRIMITIVE(INTEGER , Boolean , LIST OF Ids) AS PARAMETERS AND DOESNOT ACCEPT NON PRIMITIVE(SOBJECTS)
+3.future methods are static and void
+4.You must have faced mixed DML exception.This exception occurs when you insert set up and non setup objects in one transaction.
+Setupobjects-User, Group, Profile, Layout,Email templates
+Nonsetup Objects- All other standard and custom objects(Account,Custom objects)
+We cannot insert User/Profile and Account in same object.Then Future method is savoir to get out of this situation as it runs in seperate transaction
+5.You cannot perform callout from trigger.Use future method to put callout in future method to make a callout
+6. You cannot call one future method from another future method.
+*/
 
+//SYNTAX
+@future
+public static void carServicing(List < Id > recordIds){
+    //CODE THAT WILL RUN IN BACKGROUND
+}
 
 
 //////////////////////////////////// QUEUABLE APEX ////////////////////////////////////////////////////////////////
@@ -434,21 +450,165 @@ public class ContactTriggerHandler {
 
 
 
+//////////////////////////////////  sanjay gupta Asynchronous apex ////////////////////////////////////
+/*
+An asynchronous process executes a task in the background.User doesnt have to wait for the task to finish.
+Use Asynchronous Apex for:
+     1. Callouts to external systems
+     2. Operations that require higher limits
+     3. Code that needs to run at a certain time.
+Asynchronous jobs wheather executed or not can be seen in Apex Jobs
 
+//Types of Asynchronous Processing
 
+Future - Run in their own thread, and do not start until resources are available
+Common Scenarios - Web service callout.
 
+Batch Apex - Run large jobs that would exceed normal processing limits
+Common Scenarios - Data cleansing or archiving of records
 
+Queueable - Similar to future methods, but provide additional job chaining and allow more complex data types to be used.
+Common Scenarios - Performing sequential processing operations with external Web Services.
 
+Scheduled Apex - Schedule Apex to run at a specified time.
+Common Scenarios - Daily or weekly tasks
 
+//Governor and Execution Limits
+Asynchronous apex provides higher governor and execution limits.
+Number of SOQL is doubled from 100 to 200.
+Total heap size and maximum CPU time are similary large for asynchronous calls.
+As you get higher limits with async, also those limits are independent of the limits in the synchronous request that queued the async request initially.
 
+/////////////////////////////////Future Apex
+Future Apex runs process in a separate thread, at a later time when system resources become available.
+Use @future annotation to create future methods.
+In Synchronous processing, all method calls are made from
+the same thread and no additional processing can occur until the process is complete.
+Whereas in future method, methods runs asynchronously in its own thread.
+This unblocks users from performing other operations. 
+Provides higher governor & execution limits for processing.
 
+//When to use Future Method?
+Callouts to external Web services. (we cant make Callouts from trigger so in that case we need to call future method ; set callouts=true)
+Process that needs to executed in a separate or their own thread.
+Isolating DML operations on different sObject types to prevent the mixed DML error. 
+(like setup(user,profile) & nonsetup objects(standard & custom) as we cannot perform DML on both in 1 transaction)
+*/
 
+//syntax
+global class FutureApex {
+    @future
+    public static void futureMethod(List<ld> recordlds) {
+    List < Account > accounts =[SELECT ld From Account WHERE Id IN: recordlds];
+    //some operation
+}
+}
 
+//Example
+//Total number of contacts available on any Account
+public class AccountCalculator {
+    @future
+    public static void countContacts(List<Id> accIds) {
+    List < Account > accList =[SELECT Id, (SELECT Id FROM Contacts) FROM Account WHERE Id IN: accIds];
+    for (Account acc: accList) {
+        acc.Number_of_Contacts_c = acc.Contacts.size();
+    }
+    if (!accList.isEmpty()) {
+    update accList;
+    }
+}}
 
+//test class for future method example
+@isTest
+public class AccountCalculatorTest {
+    @isTest
+    private static void countcontactsTest() {
+        List < Account > accList = new List < Account > ();
+        for (Integer i = 0; i < 250; i++) {
+            accList.add(new Account(Name = 'Test' + i));
+        }
+insert accList;
+        List < Contact > conList = new List < Contact();
+        List < Id > accIds-= new List < Id > ();
+        for (Account acc: accLIst) {
+            conList.add(new Contact(FirstName = 'Test', LastName = acc.Name, AccountId = acc.Id));
+            accIds.add(acc.Id);
+        }
+insert conList;
+        Test.startTest();
+        AccountCalculator.countContacts(accIds);
+        Test.stopTest();
+        List < Account > accs =[SELECT Id, Number _of_Contacts c FROM Account];
+        System.assertEquals(1, accs[0].Number_of_Contacts_c, 'not working');
+    }
+}
 
+////////////////////////////////////////////////Batch Apex
+/* 
+Batch Apex runs large jobs.It can process thousands or millions of records.It processes records asynchronously in batches.
+For Data cleansing or archiving, Batch Apex is probably best solution.
 
+How Batch Apex works ?
+    The execution logic of the batch class is called once for each batch of records that is being processed.
+Each time when a batch class is invoked, the job is placed on the Apex job queue and is executed as a discrete transaction.
+Advantages are:
+o) Every transaction starts with a new set of g
+limits.
+    o) If one batch fails to process successfully, all other
+successful batch transactions aren't rolled back. 
 
+Batch Apex class must implement the Database.Batchable interface and include the following three methods:
+start
+Oexecute
+finish
 
+//start
+1) Collect the records or objects to be passed to the interface method execute for processing.
+2) start method is called once at the beginning of a Batch Apex Job.
+3) It returns a Database.QueryLocator object or an Iterable that contains the records or objects passed to the job.
+4) When QueryLocator object is used, the governor limit for the total
+number of records retrieved by SOQL queries is bypassed and 50
+million records can be queried.
+5) Whereas with an Iterable, governor limit by SOQL queries is
+enforced.
+
+//execute
+1) Performs actual processing for each batch of data passed.
+2) Default batch size is 200 records.
+3) Batches of records can execute in any order, it doesn't depends on which order they are received from the start method.
+4) It takes a reference to the Database.BatchableContext object and A List < sObject > or a list of parameterized types.
+5) When using Database.QueryLocator use the returned list.
+
+//finish
+1) Execute post - processing operations.
+2) Calls once after all batches are processed.
+3) For example, sending an email process can be implemented in finish method.
+
+//SYNTAX
+public class MyBatch implements Database.batchable<sObject>{
+    public Database.QueryLocator start(Database.BatchableContext bc) {
+        //collect the batches of records or objects to be passed to execute method
+    }
+    public void execute(Database.BatchableContext bc, List<P> records) {
+    //Process each batch of records
+}
+public void finish(Database.BatchableContext bc) {
+    //execute post-processing operations
+}
+}
+
+//Invoke a Batch Class
+MyBatch myBatch Obj = new MyBatch();
+Id batchld= Database.executeBatch(myBatch Obj):
+
+Pass Batch Size if needed:
+Id batchld = Database.executeBatch(myBatchObj, 100);
+
+//AsyncApexJob Record
+Each Batch Apex invocation creates an AsyncApexJobrecord.It helps to track progress of the job.
+
+AsyncApexJob job [SELECT Id, Status, Jobltems Processed, TotalJobltems, NumberOfErrors FROM AsyncApexJob WHERE ID : batchld];
+*/
 
 
 
